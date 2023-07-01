@@ -47,6 +47,7 @@
 #include <ws2tcpip.h>
 #pragma comment(lib,"ws2_32.lib")
 #undef max // MS makes std::numeric_limits<T>::max() unusable without this line
+#undef min // MS makes std::numeric_limits<T>::min() unusable without this line
 #define CPP_LITE_SOCKETS_FN __declspec(noinline) inline
 #else // !_WIN32
 // Linux includes
@@ -88,10 +89,24 @@ static const int SOCKET_ERROR = -1;
 #ifndef ECLS_CONNGRACEFULLYCLOSED
 #define ECLS_CONNGRACEFULLYCLOSED   ((errorcode_t)0x80090001)
 #endif 
-// You can define your own errorcode_t for 'invalid socket' error
-#ifndef ECLS_INVALIDSOCKET
+// 'invalid socket' error
 #define ECLS_INVALIDSOCKET          ((errorcode_t)0x80090002)
-#endif 
+// unknown error
+#define ECLS_UNKNOWN_ERROR          ((errorcode_t)0x80090003)
+
+// Linux specific error codes (for getaddrinfo)
+#ifndef _WIN32
+#define ECLS_EAI_AGAIN              ((errorcode_t)0x80090101) // EAI_AGAIN     
+#define ECLS_EAI_ADDRFAMILY         ((errorcode_t)0x80090102) // EAI_ADDRFAMILY
+#define ECLS_EAI_BADFLAGS           ((errorcode_t)0x80090103) // EAI_BADFLAGS  
+#define ECLS_EAI_FAIL               ((errorcode_t)0x80090104) // EAI_FAIL      
+#define ECLS_EAI_FAMILY             ((errorcode_t)0x80090105) // EAI_FAMILY    
+#define ECLS_EAI_MEMORY             ((errorcode_t)0x80090106) // EAI_MEMORY    
+#define ECLS_EAI_NODATA             ((errorcode_t)0x80090107) // EAI_NODATA    
+#define ECLS_EAI_NONAME             ((errorcode_t)0x80090108) // EAI_NONAME
+#define ECLS_EAI_SERVICE            ((errorcode_t)0x80090109) // EAI_SERVICE
+#define ECLS_EAI_SOCKTYPE           ((errorcode_t)0x80090110) // EAI_SOCKTYPE
+#endif
 
 // Compatibility definitions for windows
 #if defined(_WIN32) && !defined(SHUT_RDWR)
@@ -200,6 +215,11 @@ namespace cpp_lite_sockets
     CPP_LITE_SOCKETS_FN std::pair<sockaddr_wrap, errorcode_t> socket_getpeername(const socket_t& socket);
 
     //////////////////////////////////////////////////////////////////////////
+    // Name / ip resolving functions
+    CPP_LITE_SOCKETS_FN std::pair<std::shared_ptr<addrinfo>, errorcode_t> getaddrinfo_wrap(const char* pNodeName, const char* pServiceName, const addrinfo* hints = NULL);
+    CPP_LITE_SOCKETS_FN std::string sockaddr_to_string(const sockaddr& sa, bool with_port = true, bool with_scope_id = true);
+
+    //////////////////////////////////////////////////////////////////////////
     // TCP / UDP servers
 
     // TCP Server
@@ -254,84 +274,39 @@ namespace cpp_lite_sockets
     public:
         sockaddr_wrap() { };
         sockaddr_wrap(const sockaddr& sa_, int sa_len) : len(sa_len) { std::memcpy(&sa, &sa_, sa_len); };
+        sockaddr_wrap(const sockaddr* psa, int sa_len) : len(psa ? sa_len : 0) { std::memcpy(&sa, psa, len); };
+        sockaddr_wrap(const addrinfo* pai): len(pai ? pai->ai_addrlen : 0) { if(len) std::memcpy(&sa, pai->ai_addr, len); };
         int get_len() const { return len; }
         operator const sockaddr* () const { return &sa.sa; }
         operator sockaddr* () { return &sa.sa; }
-        int get_family() const { return sa.sa.sa_family; }
-        CPP_LITE_SOCKETS_FN std::uint16_t get_port() const;
-        CPP_LITE_SOCKETS_FN std::string to_string(bool with_port = true, bool with_scope_id = true) const;
-
-        CPP_LITE_SOCKETS_FN bool is_any_addr() const;
-        CPP_LITE_SOCKETS_FN bool is_local_addr() const;
 
     public:
+        // Any type of sockaddr
+        std::uint16_t get_family() const { return sa.sa.sa_family; }
+        CPP_LITE_SOCKETS_FN std::string to_string(bool with_port = true, bool with_scope_id = true) const;
+
         // IPv4
-        sockaddr_wrap& set_ipv4() {
-            len = sizeof(sockaddr_in);
-            sa.sa.sa_family = AF_INET;
-            return *this;
-        }
-        sockaddr_wrap& set_ipv4_port(std::uint16_t port) {
-            set_ipv4();
-            sa.sa_in4.sin_port = htons(port);
-            return *this;
-        }
-        sockaddr_wrap& set_ipv4_addr(std::uint32_t addr = INADDR_ANY) {
-            set_ipv4();
-            sa.sa_in4.sin_addr.s_addr = htonl(addr);
-            return *this;
-        }
-        errorcode_t resolve_ipv4_addr(const char* addr) {
-            errorcode_t res = 0;
-            set_ipv4();
-            int ret = ::inet_pton(AF_INET, addr, &sa.sa_in4.sin_addr);
-            res = impl::check_socket_error(ret);
-            if (ret == 0) {
-                res = EADDRNOTAVAIL;
-            }
-            if (res) {
-                CPP_LITE_SOCKETS__LOGGER("Error resolving network ipv4 address '%s': %d", addr, res);
-            }
-            return res;
-        }
+        CPP_LITE_SOCKETS_FN sockaddr_wrap& set_ipv4();
+        CPP_LITE_SOCKETS_FN sockaddr_wrap& set_ipv4_port(std::uint16_t port);
+        CPP_LITE_SOCKETS_FN sockaddr_wrap& set_ipv4_addr(std::uint32_t addr = INADDR_ANY);
+        CPP_LITE_SOCKETS_FN errorcode_t set_ipv4_addr(const char* addr);
 
         // IPv6
-        sockaddr_wrap& set_ipv6() {
-            len = sizeof(sockaddr_in6);
-            sa.sa.sa_family = AF_INET6;
-            return *this;
-        }
-        sockaddr_wrap& set_ipv6_port(std::uint16_t port) {
-            set_ipv6();
-            sa.sa_in6.sin6_port = htons(port);
-            return *this;
-        }
-        sockaddr_wrap& set_ipv6_addr(const in6_addr& addr = in6_addr(IN6ADDR_ANY_INIT)) {
-            set_ipv6();
-            sa.sa_in6.sin6_addr = addr;
-            return *this;
-        }
-        sockaddr_wrap& set_ipv6_scope(std::uint32_t scope) {
-            set_ipv6();
-            sa.sa_in6.sin6_scope_id = scope;
-            return *this;
-        }
-        std::uint32_t get_ipv6_scope() const {
-            return sa.sa_in6.sin6_scope_id;
-        }
-        errorcode_t resolve_ipv6_addr(const char* addr) {
-            errorcode_t res = 0;
-            set_ipv6();
-            int ret = ::inet_pton(AF_INET6, addr, &sa.sa_in6.sin6_addr);
-            res = impl::check_int_error(ret);
-            if (ret == 0) {
-                res = EADDRNOTAVAIL;
-            }
-            if (res) {
-                CPP_LITE_SOCKETS__LOGGER("Error resolving network ipv6 address '%s': %d", addr, res);
-            }
-            return res;
-        }
+        CPP_LITE_SOCKETS_FN sockaddr_wrap& set_ipv6();
+        CPP_LITE_SOCKETS_FN sockaddr_wrap& set_ipv6_port(std::uint16_t port);
+        CPP_LITE_SOCKETS_FN sockaddr_wrap& set_ipv6_addr(const in6_addr& addr = in6_addr(IN6ADDR_ANY_INIT));
+        CPP_LITE_SOCKETS_FN sockaddr_wrap& set_ipv6_scope(std::uint32_t scope);
+        CPP_LITE_SOCKETS_FN std::uint32_t get_ipv6_scope() const;
+        CPP_LITE_SOCKETS_FN errorcode_t resolve_ipv6_addr(const char* addr);
+
+        // IP v4/v6
+        CPP_LITE_SOCKETS_FN bool is_any_addr() const;
+        CPP_LITE_SOCKETS_FN bool is_local_addr() const;
+        CPP_LITE_SOCKETS_FN std::uint16_t get_port() const;
+        CPP_LITE_SOCKETS_FN bool set_port(std::uint16_t port);
+        CPP_LITE_SOCKETS_FN errorcode_t set_ip_addr(const char* addr, std::uint16_t port = 0);
+        CPP_LITE_SOCKETS_FN errorcode_t resolve(const char* name_or_addr, const char* port_or_service = NULL, std::uint16_t af = AF_UNSPEC);
+        CPP_LITE_SOCKETS_FN static std::pair<std::vector<sockaddr_wrap>, errorcode_t> resolve_multi(const char* name_or_addr, const char* port_or_service = NULL, std::uint16_t af = AF_UNSPEC);
     };
 
     class simple_server_itf
@@ -500,6 +475,30 @@ namespace cpp_lite_sockets
                 return "The connection was gracefully closed";
             case ECLS_INVALIDSOCKET:
                 return "Invalid socket";
+            case ECLS_UNKNOWN_ERROR:
+                return "Unknown error";
+#ifndef _WIN32
+            case ECLS_EAI_AGAIN:
+                return gai_strerror(EAI_AGAIN);
+            case ECLS_EAI_ADDRFAMILY:
+                return gai_strerror(EAI_ADDRFAMILY);
+            case ECLS_EAI_BADFLAGS:
+                return gai_strerror(EAI_BADFLAGS);
+            case ECLS_EAI_FAIL:
+                return gai_strerror(EAI_FAIL);
+            case ECLS_EAI_FAMILY:
+                return gai_strerror(EAI_FAMILY);
+            case ECLS_EAI_MEMORY:
+                return gai_strerror(EAI_MEMORY);
+            case ECLS_EAI_NODATA:
+                return gai_strerror(EAI_NODATA);
+            case ECLS_EAI_NONAME:
+                return gai_strerror(EAI_NONAME);
+            case ECLS_EAI_SERVICE:
+                return gai_strerror(EAI_SERVICE);
+            case ECLS_EAI_SOCKTYPE:
+                return gai_strerror(EAI_SOCKTYPE);
+#endif
             }
         }
         return impl::get_error_str(ec);
@@ -973,6 +972,22 @@ namespace cpp_lite_sockets
         return 0;
     }
 
+    CPP_LITE_SOCKETS_FN bool sockaddr_wrap::set_port(std::uint16_t port)
+    {
+        switch (sa.sa.sa_family)
+        {
+        case AF_INET:
+            sa.sa_in4.sin_port = htons(port);
+            break;
+        case AF_INET6:
+            sa.sa_in6.sin6_port = htons(port);
+            break;
+        default:
+            return false;
+        }
+        return true;
+    }
+
     CPP_LITE_SOCKETS_FN bool sockaddr_wrap::is_any_addr() const
     {
         typedef decltype(sa.sa_in4.sin_addr) TAddr4;
@@ -1011,30 +1026,41 @@ namespace cpp_lite_sockets
         return false;
     }
 
-    CPP_LITE_SOCKETS_FN std::string sockaddr_wrap::to_string(bool with_port/* = true*/, bool with_scope_id /*= true*/) const
+    CPP_LITE_SOCKETS_FN std::string sockaddr_to_string(const sockaddr& sa, bool with_port/* = true*/, bool with_scope_id /*= true*/)
     {
         const char* res = NULL;
         std::string res_str;
         errorcode_t ec = 0;
+        std::uint16_t port;
+        std::uint32_t scope_id;
         char buff[INET6_ADDRSTRLEN + 1 /*\0*/];
-        switch (sa.sa.sa_family)
+        switch (sa.sa_family)
         {
         case AF_UNSPEC:
             res = "unspecified";
             with_port = false;
             break;
         case AF_INET:
-            res = ::inet_ntop(AF_INET, const_cast<void*>(static_cast<const void*>(&sa.sa_in4.sin_addr)), buff, sizeof(buff));
+        {
+            const sockaddr_in& sa_in4 = *reinterpret_cast<const sockaddr_in*>(&sa);
+            res = ::inet_ntop(AF_INET, const_cast<void*>(static_cast<const void*>(&sa_in4.sin_addr)), buff, sizeof(buff));
+            port = ntohs(sa_in4.sin_port);
             if (!res) {
                 ec = impl::get_last_error();
             }
             break;
+        }
         case AF_INET6:
-            res = ::inet_ntop(AF_INET6, const_cast<void*>(static_cast<const void*>(&sa.sa_in6.sin6_addr)), buff, sizeof(buff));
+        {
+            const sockaddr_in6& sa_in6 = *reinterpret_cast<const sockaddr_in6*>(&sa);
+            res = ::inet_ntop(AF_INET6, const_cast<void*>(static_cast<const void*>(&sa_in6.sin6_addr)), buff, sizeof(buff));
+            port = ntohs(sa_in6.sin6_port);
+            scope_id = sa_in6.sin6_scope_id;
             if (!res) {
                 ec = impl::get_last_error();
             }
             break;
+        }
         default:
             res = "unsupported";
             with_port = false;
@@ -1047,22 +1073,295 @@ namespace cpp_lite_sockets
         }
 
         res_str = res;
-        if (with_scope_id && sa.sa.sa_family == AF_INET6) {
-            auto scope_id = get_ipv6_scope();
-            if(scope_id) {
-                res_str.append("%");
-                res_str.append(std::to_string(scope_id));
-            }
+        if (with_scope_id && sa.sa_family == AF_INET6 && scope_id) {
+            res_str.append("%");
+            res_str.append(std::to_string(scope_id));
         }
-        if (with_port) {
-            auto port = get_port();
-            if (port) {
-                res_str.append(":");
-                res_str.append(std::to_string(get_port()));
-            }
+        if (with_port && port) {
+            res_str.append(":");
+            res_str.append(std::to_string(port));
         }
         return res_str;
     }
+
+    CPP_LITE_SOCKETS_FN std::string sockaddr_wrap::to_string(bool with_port/* = true*/, bool with_scope_id /*= true*/) const
+    {
+        return sockaddr_to_string(sa.sa, with_port, with_scope_id);
+    }
+
+    CPP_LITE_SOCKETS_FN sockaddr_wrap& sockaddr_wrap::set_ipv4() {
+        len = sizeof(sockaddr_in);
+        sa.sa.sa_family = AF_INET;
+        return *this;
+    }
+
+    CPP_LITE_SOCKETS_FN sockaddr_wrap& sockaddr_wrap::set_ipv4_port(std::uint16_t port) {
+        set_ipv4();
+        sa.sa_in4.sin_port = htons(port);
+        return *this;
+    }
+
+    CPP_LITE_SOCKETS_FN sockaddr_wrap& sockaddr_wrap::set_ipv4_addr(std::uint32_t addr /*= INADDR_ANY*/) {
+        set_ipv4();
+        sa.sa_in4.sin_addr.s_addr = htonl(addr);
+        return *this;
+    }
+
+    CPP_LITE_SOCKETS_FN errorcode_t sockaddr_wrap::set_ipv4_addr(const char* addr) {
+        errorcode_t res = 0;
+        set_ipv4();
+        int ret = ::inet_pton(AF_INET, addr, &sa.sa_in4.sin_addr);
+        res = impl::check_socket_error(ret);
+        if (ret == 0) {
+            res = EADDRNOTAVAIL;
+        }
+        if (res) {
+            CPP_LITE_SOCKETS__LOGGER("Error resolving network ipv4 address '%s': %d", addr, res);
+        }
+        return res;
+    }
+
+    CPP_LITE_SOCKETS_FN sockaddr_wrap& sockaddr_wrap::set_ipv6() {
+        len = sizeof(sockaddr_in6);
+        sa.sa.sa_family = AF_INET6;
+        return *this;
+    }
+
+    CPP_LITE_SOCKETS_FN sockaddr_wrap& sockaddr_wrap::set_ipv6_port(std::uint16_t port) {
+        set_ipv6();
+        sa.sa_in6.sin6_port = htons(port);
+        return *this;
+    }
+
+    CPP_LITE_SOCKETS_FN sockaddr_wrap& sockaddr_wrap::set_ipv6_addr(const in6_addr& addr /*= in6_addr(IN6ADDR_ANY_INIT)*/) {
+        set_ipv6();
+        sa.sa_in6.sin6_addr = addr;
+        return *this;
+    }
+
+    CPP_LITE_SOCKETS_FN sockaddr_wrap& sockaddr_wrap::set_ipv6_scope(std::uint32_t scope) {
+        set_ipv6();
+        sa.sa_in6.sin6_scope_id = scope;
+        return *this;
+    }
+
+    CPP_LITE_SOCKETS_FN std::uint32_t sockaddr_wrap::get_ipv6_scope() const {
+        return sa.sa_in6.sin6_scope_id;
+    }
+
+    CPP_LITE_SOCKETS_FN errorcode_t sockaddr_wrap::resolve_ipv6_addr(const char* addr) {
+        errorcode_t res = 0;
+        set_ipv6();
+        int ret = ::inet_pton(AF_INET6, addr, &sa.sa_in6.sin6_addr);
+        res = impl::check_int_error(ret);
+        if (ret == 0) {
+            res = EADDRNOTAVAIL;
+        }
+        if (res) {
+            CPP_LITE_SOCKETS__LOGGER("Error resolving network ipv6 address '%s': %d", addr, res);
+        }
+        return res;
+    }
+
+    namespace impl
+    {
+        CPP_LITE_SOCKETS_FN errorcode_t resolve_ip_addr(const char* addr, sockaddr_max& sa, int af = 0) {
+            errorcode_t res = 0;
+            bool filled = false;
+            bool have_colon = false;
+
+            for (const char* p = addr; *p && !have_colon; ++p) {
+                have_colon = *p == ':';
+            }
+
+            int ret = 0;
+            if ((have_colon || af == AF_INET6) && (af == AF_UNSPEC || af == AF_INET6)) {
+                ret = ::inet_pton(AF_INET6, addr, &sa.sa_in6.sin6_addr);
+                res = check_int_error(ret);
+                if (res == 0) {
+                    sa.sa.sa_family = AF_INET6;
+                    filled = true;
+                }
+            }
+
+            if (!filled && (af == AF_UNSPEC || af == AF_INET)) {
+                ret = ::inet_pton(AF_INET, addr, &sa.sa_in4.sin_addr);
+                res = impl::check_int_error(ret);
+                if (res == 0) {
+                    sa.sa.sa_family = AF_INET;
+                    filled = true;
+                }
+            }
+
+            if (ret == 0) {
+                res = EADDRNOTAVAIL;
+            }
+
+            return res;
+        }
+
+        CPP_LITE_SOCKETS_FN errorcode_t convert_getaddrinfo_result(int ret)
+        {
+            errorcode_t ec = (errorcode_t)ret;
+#ifndef _WIN32
+            switch (ret)
+            {
+            case 0:
+                break;
+            case EAI_SYSTEM:
+                ec = get_last_error();
+                break;
+            case EAI_AGAIN:
+                ec = ECLS_EAI_AGAIN; break;
+            case EAI_ADDRFAMILY:
+                ec = ECLS_EAI_ADDRFAMILY; break;
+            case EAI_BADFLAGS:
+                ec = ECLS_EAI_BADFLAGS; break;
+            case EAI_FAIL:
+                ec = ECLS_EAI_FAIL; break;
+            case EAI_FAMILY:
+                ec = ECLS_EAI_FAMILY; break;
+            case EAI_MEMORY:
+                ec = ECLS_EAI_MEMORY; break;
+            case EAI_NONAME:
+                ec = ECLS_EAI_NONAME; break;
+#if defined(EAI_NODATA) && (EAI_NODATA != EAI_NONAME)
+            case EAI_NODATA:
+                ec = ECLS_EAI_NODATA; break;
+#endif
+            case EAI_SERVICE:
+                ec = ECLS_EAI_SERVICE; break;
+            case EAI_SOCKTYPE:
+                ec = ECLS_EAI_SOCKTYPE; break;
+            default:
+                ec = ECLS_UNKNOWN_ERROR;
+            }
+#endif
+            return ec;
+        }
+    } // impl
+
+    CPP_LITE_SOCKETS_FN std::pair<std::shared_ptr<addrinfo>, errorcode_t> getaddrinfo_wrap(const char* pNodeName, const char* pServiceName, const addrinfo* hints /*= NULL*/)
+    {
+        sockets_initialize();
+        std::pair<std::shared_ptr<addrinfo>, errorcode_t> res;
+        auto& spRes = res.first;
+        auto& ec = res.second;
+        addrinfo* p_res = NULL;
+        int ret = 0;
+        if (pNodeName && !*pNodeName) {
+            // Windows allows empty string as pNodeName, but Linux don't.
+            // Our solution is cross platform, so it will always fail such queries.
+            ret = EAI_NONAME;
+        }
+        else {
+            ret = ::getaddrinfo(pNodeName, pServiceName, hints, &p_res);
+        }
+        if (ret == 0) {
+            spRes = std::shared_ptr<addrinfo>(p_res, [](addrinfo* p) {
+                ::freeaddrinfo(p);
+                });
+            ec = 0;
+        }
+        else {
+            ec = impl::convert_getaddrinfo_result(ret);
+        }
+        return res;
+    }
+
+    CPP_LITE_SOCKETS_FN errorcode_t sockaddr_wrap::set_ip_addr(const char* addr, std::uint16_t port /*= 0*/) {
+        errorcode_t res = impl::resolve_ip_addr(addr, sa);
+        if (res) {
+            CPP_LITE_SOCKETS__LOGGER("Error resolving network address '%s': %d", addr, res);
+        }
+        else {
+            if (port) {
+                set_port(port);
+            }
+        }
+        return res;
+    }
+
+    CPP_LITE_SOCKETS_FN errorcode_t sockaddr_wrap::resolve(const char* name_or_addr, const char* port_or_service /*= NULL*/, std::uint16_t af /*= AF_UNSPEC*/) {
+        errorcode_t res = 0;
+        addrinfo hints = {};
+        hints.ai_family = af;
+
+        std::shared_ptr<addrinfo> addrs;
+        std::tie(addrs, res) = getaddrinfo_wrap(name_or_addr, port_or_service, &hints);
+
+        if (res == 0) 
+        {
+            bool filled = false;
+            if (af == AF_UNSPEC) 
+            {
+                for (addrinfo* p = addrs.get(); p; p = p->ai_next) {
+                    if (p->ai_family == AF_INET || p->ai_family == AF_INET6)
+                    {
+                        *this = sockaddr_wrap(p);
+                        filled = true;
+                        break;
+                    }
+                }
+            }
+            if (!filled) 
+            {
+                for (addrinfo* p = addrs.get(); p; p = p->ai_next) {
+                    if (p->ai_family == af)
+                    {
+                        *this = sockaddr_wrap(p);
+                        filled = true;
+                        break;
+                    }
+                }
+            }
+            if (!filled) {
+                // Should never happens
+                res = ECLS_UNKNOWN_ERROR;
+            }
+        }
+
+        if (res) {
+            CPP_LITE_SOCKETS__LOGGER("Error resolving network name or address '%s': %d", addr, res);
+        }
+        return res;
+    }
+
+    CPP_LITE_SOCKETS_FN static std::pair<std::vector<sockaddr_wrap>, errorcode_t> resolve_multi(const char* name_or_addr, const char* port_or_service = NULL, std::uint16_t af = AF_UNSPEC)
+    {
+        std::pair<std::vector<sockaddr_wrap>, errorcode_t> res;
+        errorcode_t& ec = res.second;
+        auto& res_addrs = res.first;
+
+        addrinfo hints = {};
+        hints.ai_family = af;
+
+        std::shared_ptr<addrinfo> addrs;
+        std::tie(addrs, ec) = getaddrinfo_wrap(name_or_addr, port_or_service, &hints);
+
+        if (ec == 0)
+        {
+            bool filled = false;
+            for (addrinfo* p = addrs.get(); p; p = p->ai_next) {
+                if (p->ai_family == af)
+                {
+                    res_addrs.push_back(sockaddr_wrap(p));
+                    filled = true;
+                }
+            }
+            if (!filled) {
+                // Should never happens
+                ec = ECLS_UNKNOWN_ERROR;
+            }
+        }
+
+        if (ec) {
+            CPP_LITE_SOCKETS__LOGGER("Error resolving network name or address '%s': %d", addr, ec);
+        }
+        return res;
+    }
+
+    //////////////////////////////////////////////////////////////////////////
 
     CPP_LITE_SOCKETS_FN errorcode_t socket_getopt(const socket_t& socket, int level, int optname, void* optval, size_t optlen)
     {

@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="tests-sockaddr_wrap.cpp" />
+    <ClCompile Include="tests-socket-create.cpp" />
+    <ClCompile Include="tests-tcp-server.cpp" />
+    <ClCompile Include="tests-udp-server.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="tests-common.h" />
+    <ClInclude Include="..\..\include\cpp-lite-sockets\cpp-lite-sockets.hpp">
+      <Filter>includes</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="includes">
+      <UniqueIdentifier>{9605f0a2-1a8e-4588-8e80-6cf1ac1ad84b}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

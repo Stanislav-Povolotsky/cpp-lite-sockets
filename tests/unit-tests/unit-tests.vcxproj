@@ -33,27 +33,30 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <OutDir>.\build\windows\vs\$(Platform)\$(Configuration)</OutDir>
-    <IntDir>.\build\windows\vs\int\$(Platform)\$(Configuration)</IntDir>
+    <OutDir>.\build\windows\vs\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>.\build\windows\vs\int\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <OutDir>.\build\windows\vs\$(Platform)\$(Configuration)</OutDir>
-    <IntDir>.\build\windows\vs\int\$(Platform)\$(Configuration)</IntDir>
+    <OutDir>.\build\windows\vs\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>.\build\windows\vs\int\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <OutDir>.\build\windows\vs\$(Platform)\$(Configuration)</OutDir>
-    <IntDir>.\build\windows\vs\int\$(Platform)\$(Configuration)</IntDir>
+    <OutDir>.\build\windows\vs\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>.\build\windows\vs\int\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <OutDir>.\build\windows\vs\$(Platform)\$(Configuration)</OutDir>
-    <IntDir>.\build\windows\vs\int\$(Platform)\$(Configuration)</IntDir>
+    <OutDir>.\build\windows\vs\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>.\build\windows\vs\int\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\include\cpp-lite-sockets\cpp-lite-sockets.hpp" />
     <ClInclude Include="tests-common.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="tests-sockaddr_wrap.cpp" />
     <ClCompile Include="tests-socket-create.cpp" />
+    <ClCompile Include="tests-tcp-server.cpp" />
+    <ClCompile Include="tests-udp-server.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
