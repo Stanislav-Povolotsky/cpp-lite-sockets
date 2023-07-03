@@ -22,6 +22,7 @@
 
 // ------------------------------------------------------------------------------
 // cpp-lite-sockets - C++11 sockets library
+// https://github.com/Stanislav-Povolotsky/cpp-lite-sockets
 // - cross-platform
 // - lightweight
 // - single-header-file-only
@@ -1322,7 +1323,7 @@ namespace cpp_lite_sockets
         }
 
         if (res) {
-            CPP_LITE_SOCKETS__LOGGER("Error resolving network name or address '%s': %d", addr, res);
+            CPP_LITE_SOCKETS__LOGGER("Error resolving network name or address '%s': %d", name_or_addr, res);
         }
         return res;
     }
@@ -1356,7 +1357,7 @@ namespace cpp_lite_sockets
         }
 
         if (ec) {
-            CPP_LITE_SOCKETS__LOGGER("Error resolving network name or address '%s': %d", addr, ec);
+            CPP_LITE_SOCKETS__LOGGER("Error resolving network name or address '%s': %d", name_or_addr, ec);
         }
         return res;
     }
